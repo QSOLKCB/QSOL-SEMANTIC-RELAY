@@ -44,6 +44,12 @@ def transform_board(real_board: str, condition: str, seed: int) -> str:
             shuffled[0], shuffled[swap_index] = shuffled[swap_index], shuffled[0]
         return " ".join(shuffled)
 
-    # RANDOM: equal token count, deterministic synthetic noise, and no reuse of
-    # writer tokens. The token length is intentionally simple and auditable.
-    return " ".join(f"Z{rng.randrange(1_000_000):06d}" for _ in tokens)
+    writer_tokens = set(tokens)
+    random_tokens: list[str] = []
+    for _ in tokens:
+        while True:
+            candidate = f"Z{rng.randrange(1_000_000):06d}"
+            if candidate not in writer_tokens:
+                random_tokens.append(candidate)
+                break
+    return " ".join(random_tokens)

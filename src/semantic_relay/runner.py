@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import random
 from typing import Any
 import uuid
 
@@ -31,6 +32,10 @@ class Experiment:
         if not facts or any(not item for item in facts):
             raise ValueError("facts must contain at least one non-empty string")
 
+        question_raw = raw.get("question")
+        if not isinstance(question_raw, str) or not question_raw.strip():
+            raise ValueError("question must be a non-empty string")
+
         expected_answer_raw = raw.get("expected_answer")
         if not isinstance(expected_answer_raw, str) or not expected_answer_raw.strip():
             raise ValueError("expected_answer must be a non-empty string")
@@ -41,10 +46,29 @@ class Experiment:
         return cls(
             experiment_id=str(raw["id"]),
             facts=facts,
-            question=str(raw["question"]).strip(),
+            question=question_raw.strip(),
             expected_answer=expected_answer_raw.strip(),
             writer_word_budget=budget,
         )
+
+    def canonical_json(self) -> str:
+        payload = {
+            "expected_answer": self.expected_answer,
+            "facts": list(self.facts),
+            "id": self.experiment_id,
+            "question": self.question,
+            "writer_word_budget": self.writer_word_budget,
+        }
+        return json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+
+    @property
+    def input_sha256(self) -> str:
+        return sha256_text(self.canonical_json())
 
 
 def load_experiment(path: Path) -> Experiment:
@@ -64,20 +88,26 @@ def writer_prompt(experiment: Experiment) -> str:
 
 
 def reader_prompt(board: str, question: str) -> str:
-    rendered_board = board if board else "<EMPTY>"
     return (
         "You are the READER in a semantic-relay experiment. You have no access to any "
         "earlier agent context.\n"
         "Use only the board below to answer the question. If the board does not justify "
         "an answer, return UNKNOWN.\n"
         "Return only the answer token with no explanation.\n\n"
-        f"BOARD:\n{rendered_board}\n\n"
+        f"BOARD:\n{board}\n\n"
         f"QUESTION:\n{question}\n"
     )
 
 
 def normalize_answer(text: str) -> str:
     return " ".join(text.strip().split()).casefold()
+
+
+def _condition_order(base_seed: int, replication_index: int) -> tuple[tuple[str, ...], int]:
+    order_seed = base_seed + (replication_index * 1009) + 1_000_003
+    conditions = list(CONDITIONS)
+    random.Random(order_seed).shuffle(conditions)
+    return tuple(conditions), order_seed
 
 
 def run_replication(
@@ -92,19 +122,25 @@ def run_replication(
     real_board = truncate_words(writer_raw, experiment.writer_word_budget)
     replication_id = str(uuid.uuid4())
     writer_hash = sha256_text(real_board)
+    experiment_hash = experiment.input_sha256
     timestamp = datetime.now(timezone.utc).isoformat()
+    condition_order, order_seed = _condition_order(base_seed, replication_index)
 
     records: list[dict[str, Any]] = []
-    for condition_offset, condition in enumerate(CONDITIONS):
+    for execution_index, condition in enumerate(condition_order):
+        condition_offset = CONDITIONS.index(condition)
         condition_seed = base_seed + (replication_index * 1009) + condition_offset
         reader_board = transform_board(real_board, condition, condition_seed)
         observed = reader.invoke(reader_prompt(reader_board, experiment.question))
         record = {
             "experiment_id": experiment.experiment_id,
+            "experiment_input_sha256": experiment_hash,
             "replication_id": replication_id,
             "replication_index": replication_index,
             "timestamp_utc": timestamp,
             "condition": condition,
+            "condition_execution_index": execution_index,
+            "condition_order_seed": order_seed,
             "seed": condition_seed,
             "writer_agent": writer.label,
             "reader_agent": reader.label,

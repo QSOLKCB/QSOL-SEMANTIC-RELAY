@@ -31,11 +31,13 @@ It would **not** by itself establish consciousness, collective agency, or emerge
 | Condition | Reader receives |
 | --- | --- |
 | `REAL` | Writer's compact board |
-| `NULL` | Empty board |
+| `NULL` | Literal empty board text |
 | `SHUFFLED` | Same board tokens in deterministic random order |
-| `RANDOM` | Equal token count of deterministic synthetic noise |
+| `RANDOM` | Equal token count of deterministic synthetic noise that excludes writer tokens |
 
 All four reader conditions in a replication are derived from the **same writer output**, making the comparison paired. `SHUFFLED` must actually differ from `REAL`; if the writer emits too little lexical diversity to construct a distinct permutation, the run fails rather than recording a mislabeled control.
+
+Reader-condition execution order is deterministically randomized per replication so model warm-up, throttling, or temporal drift is not perfectly confounded with condition.
 
 ## Run locally
 
@@ -58,7 +60,9 @@ PYTHONPATH=src python -m semantic_relay.runner \
   --output results/exp001.jsonl
 ```
 
-Each invocation is a new subprocess. The model server may remain loaded, but no chat transcript, KV cache, or application conversation state is passed from writer to reader by this harness.
+Each invocation is a new subprocess. The harness gives it a fresh empty working directory and a small environment allowlist. The model server may remain loaded, but no chat transcript, KV cache, or application conversation state is passed from writer to reader by this harness.
+
+**Runtime restriction:** `CommandAgent` supports pure stdin/stdout model clients only. Do not use tool-capable wrappers or agents with filesystem access. The empty working directory and stripped environment reduce incidental leakage but are not a general-purpose operating-system sandbox.
 
 The output path must be fresh for each CLI invocation. The runner reserves it before any model call and exits if the path already exists, preventing separate runs from being silently mixed. Choose a new `--output` path or explicitly remove the old result file before rerunning.
 
@@ -67,7 +71,8 @@ The output path must be fresh for each CLI invocation. The runner reserves it be
 Each JSONL record includes:
 
 - experiment and replication identifiers;
-- condition and deterministic seed;
+- a SHA-256 hash of the complete validated experiment input;
+- condition, deterministic transform seed, execution index, and condition-order seed;
 - writer and reader command labels;
 - pre-write, writer-board, and reader-board SHA-256 hashes;
 - reader-output SHA-256 hash;
@@ -86,6 +91,7 @@ Phase 0 deliberately has:
 - no web UI;
 - no LangChain or multi-agent framework;
 - no distributed scheduler;
+- no tool-capable agents;
 - no Kubernetes. Absolutely no fucking Kubernetes. :-)
 
 See [`PROTOCOL.md`](PROTOCOL.md) for the experimental contract.

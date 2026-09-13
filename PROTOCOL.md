@@ -19,11 +19,14 @@ For every writer-to-reader handoff:
 3. The harness truncates that text to the configured word budget and stores it as the writer board.
 4. The writer invocation ends.
 5. Each reader condition is invoked independently in a new subprocess.
-6. A reader receives only:
+6. Each `CommandAgent` invocation runs in a fresh empty working directory with a small environment allowlist.
+7. A reader prompt contains only:
    - its condition-specific board text;
    - the fixed reader instruction; and
    - the experimental question.
-7. The harness never includes the writer prompt, writer transcript, or writer process state in a reader prompt.
+8. The harness never includes the writer prompt, writer transcript, or writer process state in a reader prompt.
+
+`CommandAgent` is explicitly restricted to pure stdin/stdout model clients without tool or filesystem access. Its empty working directory and stripped environment reduce incidental leakage but do **not** constitute a universal operating-system sandbox. Tool-capable wrappers are outside the Phase 0 protocol.
 
 The model runtime may cache model weights. Weight reuse is not treated as semantic communication because the experiment does not modify weights.
 
@@ -32,11 +35,25 @@ The model runtime may cache model weights. Weight reuse is not treated as semant
 One writer board is generated per replication. Four reader boards are derived from that same writer board:
 
 - `REAL`: unchanged writer board;
-- `NULL`: empty string;
-- `SHUFFLED`: identical whitespace-delimited tokens shuffled using the replication seed;
-- `RANDOM`: equal number of deterministic synthetic noise tokens generated from the replication seed.
+- `NULL`: literal empty string, rendered without a condition-specific marker;
+- `SHUFFLED`: identical whitespace-delimited tokens shuffled using the condition seed and required to differ from `REAL`;
+- `RANDOM`: equal number of deterministic synthetic noise tokens generated from the condition seed, with any token present in the writer board rejected and redrawn.
 
 This design controls for writer variation across conditions.
+
+Reader-condition execution order is deterministically permuted once per replication using a separate order seed. Each condition keeps its canonical condition-specific transform seed regardless of execution position. This avoids perfectly confounding condition with model warm-up, service load, throttling, or temporal drift.
+
+## Experiment identity and provenance
+
+The validated experiment input is canonicalized from:
+
+- experiment ID;
+- facts;
+- question;
+- expected answer;
+- writer word budget.
+
+A SHA-256 hash of that canonical representation is recorded in every result row. Reusing an experiment ID after changing any material validated input therefore produces a different provenance hash.
 
 ## Experiment 001: relay sanity check
 
@@ -82,8 +99,10 @@ Phase 0 is considered mechanically successful when:
 
 - automated tests pass;
 - every reader invocation is fresh;
+- supported agent commands satisfy the no-tools/no-filesystem runtime restriction;
 - all four controls run from one writer board per replication;
-- board/output hashes are recorded;
+- condition execution order is deterministically randomized;
+- experiment, board, and output hashes are recorded;
 - synthetic fixtures are sufficient to score exact answers;
 - the results file can be reproduced from a documented command.
 
@@ -99,5 +118,6 @@ Phase 0 will not add:
 - long-term memory services;
 - embeddings or vector databases;
 - orchestration frameworks;
+- tool-capable agents;
 - model fine-tuning;
 - claims beyond the measured relay effect.

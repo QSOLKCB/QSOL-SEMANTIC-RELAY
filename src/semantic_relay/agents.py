@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 import shlex
 import subprocess
+import tempfile
 from typing import Protocol
 
 
@@ -15,9 +17,26 @@ class Agent(Protocol):
     def invoke(self, prompt: str) -> str: ...
 
 
+_SAFE_ENV_KEYS = (
+    "PATH",
+    "PATHEXT",
+    "SYSTEMROOT",
+    "WINDIR",
+    "COMSPEC",
+    "LANG",
+    "LC_ALL",
+    "OLLAMA_HOST",
+)
+
+
 @dataclass(frozen=True)
 class CommandAgent:
-    """Invoke one fresh subprocess per prompt.
+    """Invoke one fresh, restricted subprocess per prompt.
+
+    Supported commands must be pure stdin/stdout model clients with no tool or
+    filesystem access. This class reduces incidental leakage by running each
+    invocation in a fresh empty working directory and passing only a small
+    environment allowlist. It is not a general-purpose OS security sandbox.
 
     The command receives the prompt on stdin and must emit its response on stdout.
     `shell=False` is intentional: commands are parsed once with `shlex.split` and
@@ -39,15 +58,19 @@ class CommandAgent:
         return shlex.join(self.command)
 
     def invoke(self, prompt: str) -> str:
-        completed = subprocess.run(
-            self.command,
-            input=prompt,
-            text=True,
-            capture_output=True,
-            timeout=self.timeout_seconds,
-            check=False,
-            shell=False,
-        )
+        env = {key: os.environ[key] for key in _SAFE_ENV_KEYS if key in os.environ}
+        with tempfile.TemporaryDirectory(prefix="semantic-relay-agent-") as workdir:
+            completed = subprocess.run(
+                self.command,
+                input=prompt,
+                text=True,
+                capture_output=True,
+                timeout=self.timeout_seconds,
+                check=False,
+                shell=False,
+                cwd=workdir,
+                env=env,
+            )
         if completed.returncode != 0:
             stderr = completed.stderr.strip()
             raise RuntimeError(

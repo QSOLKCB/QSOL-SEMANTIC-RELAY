@@ -34,6 +34,13 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(len(random_board.split()), len(board.split()))
         self.assertTrue(set(random_board.split()).isdisjoint(board.split()))
 
+    def test_random_redraws_writer_token_collision(self) -> None:
+        board = "Z339563 other"
+        random_board = transform_board(board, "RANDOM", seed=7)
+        self.assertEqual(len(random_board.split()), 2)
+        self.assertNotIn("Z339563", random_board.split())
+        self.assertTrue(set(random_board.split()).isdisjoint(board.split()))
+
     def test_null_is_empty(self) -> None:
         self.assertEqual(transform_board("anything", "NULL", seed=1), "")
 
