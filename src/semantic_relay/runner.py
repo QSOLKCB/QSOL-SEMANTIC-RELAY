@@ -77,6 +77,7 @@ def run_replication(
     replication_index: int,
     base_seed: int,
 ) -> list[dict[str, Any]]:
+    prewrite_board = ""
     writer_raw = writer.invoke(writer_prompt(experiment))
     real_board = truncate_words(writer_raw, experiment.writer_word_budget)
     replication_id = str(uuid.uuid4())
@@ -98,6 +99,7 @@ def run_replication(
             "writer_agent": writer.label,
             "reader_agent": reader.label,
             "writer_word_budget": experiment.writer_word_budget,
+            "prewrite_board_sha256": sha256_text(prewrite_board),
             "writer_board": real_board,
             "writer_board_sha256": writer_hash,
             "reader_board": reader_board,
