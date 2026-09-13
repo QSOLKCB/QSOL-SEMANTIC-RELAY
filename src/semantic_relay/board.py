@@ -30,8 +30,18 @@ def transform_board(real_board: str, condition: str, seed: int) -> str:
     rng = random.Random(seed)
 
     if condition == "SHUFFLED":
+        if len(tokens) < 2 or len(set(tokens)) < 2:
+            raise ValueError(
+                "SHUFFLED control requires at least two distinct board tokens"
+            )
         shuffled = list(tokens)
         rng.shuffle(shuffled)
+        if shuffled == tokens:
+            swap_index = next(
+                index for index, token in enumerate(tokens[1:], start=1)
+                if token != tokens[0]
+            )
+            shuffled[0], shuffled[swap_index] = shuffled[swap_index], shuffled[0]
         return " ".join(shuffled)
 
     # RANDOM: equal token count, deterministic synthetic noise, and no reuse of

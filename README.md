@@ -35,7 +35,7 @@ It would **not** by itself establish consciousness, collective agency, or emerge
 | `SHUFFLED` | Same board tokens in deterministic random order |
 | `RANDOM` | Equal token count of deterministic synthetic noise |
 
-All four reader conditions in a replication are derived from the **same writer output**, making the comparison paired.
+All four reader conditions in a replication are derived from the **same writer output**, making the comparison paired. `SHUFFLED` must actually differ from `REAL`; if the writer emits too little lexical diversity to construct a distinct permutation, the run fails rather than recording a mislabeled control.
 
 ## Run locally
 
@@ -59,6 +59,8 @@ PYTHONPATH=src python -m semantic_relay.runner \
 ```
 
 Each invocation is a new subprocess. The model server may remain loaded, but no chat transcript, KV cache, or application conversation state is passed from writer to reader by this harness.
+
+The output path must be fresh for each CLI invocation. The runner reserves it before any model call and exits if the path already exists, preventing separate runs from being silently mixed. Choose a new `--output` path or explicitly remove the old result file before rerunning.
 
 ## Recorded provenance
 

@@ -22,9 +22,19 @@ class Experiment:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "Experiment":
-        facts = tuple(str(item).strip() for item in raw["facts"])
+        facts_raw = raw.get("facts")
+        if not isinstance(facts_raw, list) or not all(
+            isinstance(item, str) for item in facts_raw
+        ):
+            raise ValueError("facts must be a list of strings")
+        facts = tuple(item.strip() for item in facts_raw)
         if not facts or any(not item for item in facts):
             raise ValueError("facts must contain at least one non-empty string")
+
+        expected_answer_raw = raw.get("expected_answer")
+        if not isinstance(expected_answer_raw, str) or not expected_answer_raw.strip():
+            raise ValueError("expected_answer must be a non-empty string")
+
         budget = int(raw["writer_word_budget"])
         if budget <= 0:
             raise ValueError("writer_word_budget must be positive")
@@ -32,7 +42,7 @@ class Experiment:
             experiment_id=str(raw["id"]),
             facts=facts,
             question=str(raw["question"]).strip(),
-            expected_answer=str(raw["expected_answer"]).strip(),
+            expected_answer=expected_answer_raw.strip(),
             writer_word_budget=budget,
         )
 
@@ -114,8 +124,19 @@ def run_replication(
     return records
 
 
-def append_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
+def prepare_output(path: Path) -> None:
+    """Atomically reserve a fresh result file for one CLI invocation."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("x", encoding="utf-8"):
+            pass
+    except FileExistsError as exc:
+        raise FileExistsError(
+            f"output already exists: {path}; choose a new --output or remove it explicitly"
+        ) from exc
+
+
+def append_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
     with path.open("a", encoding="utf-8") as handle:
         for record in records:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
@@ -141,6 +162,10 @@ def main() -> int:
     experiment = load_experiment(args.experiment)
     writer = CommandAgent.from_string(args.writer_cmd, timeout_seconds=args.timeout)
     reader = CommandAgent.from_string(args.reader_cmd, timeout_seconds=args.timeout)
+    try:
+        prepare_output(args.output)
+    except FileExistsError as exc:
+        raise SystemExit(str(exc)) from exc
 
     for replication_index in range(args.replicates):
         records = run_replication(

@@ -36,7 +36,7 @@ class CommandAgent:
 
     @property
     def label(self) -> str:
-        return " ".join(self.command)
+        return shlex.join(self.command)
 
     def invoke(self, prompt: str) -> str:
         completed = subprocess.run(
