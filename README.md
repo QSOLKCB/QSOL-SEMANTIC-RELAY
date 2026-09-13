@@ -44,7 +44,7 @@ Requires Python 3.11+ and an agent command that reads a prompt from stdin and wr
 Run the self-tests:
 
 ```bash
-python -m unittest discover -s tests -v
+PYTHONPATH=src python -m unittest discover -s tests -v
 ```
 
 Run Experiment 001 with a small local Ollama model:
@@ -67,7 +67,7 @@ Each JSONL record includes:
 - experiment and replication identifiers;
 - condition and deterministic seed;
 - writer and reader command labels;
-- writer-board and reader-board SHA-256 hashes;
+- pre-write, writer-board, and reader-board SHA-256 hashes;
 - reader-output SHA-256 hash;
 - expected and observed answer;
 - correctness;
