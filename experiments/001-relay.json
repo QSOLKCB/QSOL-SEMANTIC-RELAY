@@ -1,0 +1,11 @@
+{
+  "id": "001-relay-sanity",
+  "facts": [
+    "Object K17 is associated with property NEMU.",
+    "Object R42 is associated with property TAVO.",
+    "Objects with property NEMU are permitted through Gate 3."
+  ],
+  "question": "Which object can pass Gate 3?",
+  "expected_answer": "K17",
+  "writer_word_budget": 30
+}
