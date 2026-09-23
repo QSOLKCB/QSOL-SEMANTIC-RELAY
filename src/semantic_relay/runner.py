@@ -4,8 +4,10 @@ import argparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import random
+import tempfile
 from typing import Any
 import uuid
 
@@ -23,6 +25,10 @@ class Experiment:
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> "Experiment":
+        experiment_id_raw = raw.get("id")
+        if not isinstance(experiment_id_raw, str) or not experiment_id_raw.strip():
+            raise ValueError("id must be a non-empty string")
+
         facts_raw = raw.get("facts")
         if not isinstance(facts_raw, list) or not all(
             isinstance(item, str) for item in facts_raw
@@ -40,15 +46,17 @@ class Experiment:
         if not isinstance(expected_answer_raw, str) or not expected_answer_raw.strip():
             raise ValueError("expected_answer must be a non-empty string")
 
-        budget = int(raw["writer_word_budget"])
-        if budget <= 0:
-            raise ValueError("writer_word_budget must be positive")
+        budget_raw = raw.get("writer_word_budget")
+        if isinstance(budget_raw, bool) or not isinstance(budget_raw, int):
+            raise ValueError("writer_word_budget must be an integer")
+        if budget_raw < 2:
+            raise ValueError("writer_word_budget must be at least 2")
         return cls(
-            experiment_id=str(raw["id"]),
+            experiment_id=experiment_id_raw.strip(),
             facts=facts,
             question=question_raw.strip(),
             expected_answer=expected_answer_raw.strip(),
-            writer_word_budget=budget,
+            writer_word_budget=budget_raw,
         )
 
     def canonical_json(self) -> str:
@@ -160,22 +168,49 @@ def run_replication(
     return records
 
 
-def prepare_output(path: Path) -> None:
-    """Atomically reserve a fresh result file for one CLI invocation."""
+def prepare_output(path: Path) -> Path:
+    """Reserve a fresh output name without publishing a result file yet."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    reservation = path.parent / f".{path.name}.lock"
     try:
-        with path.open("x", encoding="utf-8"):
-            pass
+        with reservation.open("x", encoding="utf-8") as handle:
+            handle.write("semantic-relay output reservation\n")
     except FileExistsError as exc:
         raise FileExistsError(
-            f"output already exists: {path}; choose a new --output or remove it explicitly"
+            f"output is already reserved: {path}; remove stale reservation {reservation} "
+            "only if no run is active"
         ) from exc
 
+    if path.exists():
+        reservation.unlink(missing_ok=True)
+        raise FileExistsError(
+            f"output already exists: {path}; choose a new --output or remove it explicitly"
+        )
+    return reservation
 
-def append_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
-    with path.open("a", encoding="utf-8") as handle:
-        for record in records:
-            handle.write(json.dumps(record, sort_keys=True) + "\n")
+
+def publish_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
+    """Write complete records to a sibling temp file, then publish atomically."""
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
+            for record in records:
+                handle.write(json.dumps(record, sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    except BaseException:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
 
 
 def parse_args() -> argparse.Namespace:
@@ -199,24 +234,30 @@ def main() -> int:
     writer = CommandAgent.from_string(args.writer_cmd, timeout_seconds=args.timeout)
     reader = CommandAgent.from_string(args.reader_cmd, timeout_seconds=args.timeout)
     try:
-        prepare_output(args.output)
+        reservation = prepare_output(args.output)
     except FileExistsError as exc:
         raise SystemExit(str(exc)) from exc
 
-    for replication_index in range(args.replicates):
-        records = run_replication(
-            experiment,
-            writer,
-            reader,
-            replication_index=replication_index,
-            base_seed=args.seed,
-        )
-        append_jsonl(args.output, records)
-        scores = ", ".join(
-            f"{record['condition']}={'1' if record['correct'] else '0'}"
-            for record in records
-        )
-        print(f"replication {replication_index}: {scores}")
+    all_records: list[dict[str, Any]] = []
+    try:
+        for replication_index in range(args.replicates):
+            records = run_replication(
+                experiment,
+                writer,
+                reader,
+                replication_index=replication_index,
+                base_seed=args.seed,
+            )
+            all_records.extend(records)
+            scores = ", ".join(
+                f"{record['condition']}={'1' if record['correct'] else '0'}"
+                for record in records
+            )
+            print(f"replication {replication_index}: {scores}")
+
+        publish_jsonl(args.output, all_records)
+    finally:
+        reservation.unlink(missing_ok=True)
 
     print(f"wrote results to {args.output}")
     return 0
