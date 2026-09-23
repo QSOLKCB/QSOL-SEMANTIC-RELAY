@@ -154,6 +154,36 @@ class AnalyzeTests(unittest.TestCase):
             ):
                 analyze_file(path)
 
+    def test_load_jsonl_rejects_non_finite_json_constants(self) -> None:
+        records = self.make_records(1)
+        base_line = json.dumps(records[0], sort_keys=True)
+
+        for constant in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(constant=constant):
+                line = base_line.replace(
+                    "{",
+                    f'{{"extension":{constant},',
+                    1,
+                )
+                raw = (
+                    line
+                    + "\n"
+                    + "\n".join(
+                        json.dumps(record, sort_keys=True)
+                        for record in records[1:]
+                    )
+                    + "\n"
+                ).encode("utf-8")
+
+                with tempfile.TemporaryDirectory() as directory:
+                    path = Path(directory) / "non-finite.jsonl"
+                    path.write_bytes(raw)
+                    with self.assertRaisesRegex(
+                        ValidationError,
+                        f"line 1 contains non-finite JSON constant: {constant}",
+                    ):
+                        analyze_file(path)
+
     def test_rejects_semantically_duplicate_replication_uuids(self) -> None:
         records = self.make_records(2)
         shared = uuid.UUID("12345678-1234-5678-1234-567812345678")
