@@ -248,9 +248,13 @@ def _validate_records(
             f"replication {replication_index} exceeds writer_word_budget",
         )
 
-        actual_conditions = {record["condition"] for record in group}
+        validated_conditions: list[str] = []
+        for record in group:
+            condition = _require_string(record["condition"], "condition")
+            _require(condition in CONDITIONS, f"unknown condition: {condition}")
+            validated_conditions.append(condition)
         _require(
-            actual_conditions == set(CONDITIONS),
+            set(validated_conditions) == set(CONDITIONS),
             f"replication {replication_index} must contain each condition exactly once",
         )
 
