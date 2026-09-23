@@ -147,7 +147,7 @@ def build_evidence_manifest(
         experiment_raw,
     )
     _require(
-        supplied_analysis == expected_analysis,
+        _strict_equal(supplied_analysis, expected_analysis),
         "analysis JSON does not match fresh fixture-backed analysis of raw JSONL",
     )
     _require(
