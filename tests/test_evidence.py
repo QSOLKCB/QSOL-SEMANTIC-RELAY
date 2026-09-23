@@ -276,12 +276,13 @@ class EvidenceTests(unittest.TestCase):
                 )
 
     def test_directory_fsync_is_skipped_on_windows(self) -> None:
+        directory = Path("evidence")
         with (
             patch("semantic_relay.evidence.os.name", "nt"),
             patch("semantic_relay.evidence.os.open") as open_directory,
             patch("semantic_relay.evidence.os.fsync") as fsync_directory,
         ):
-            evidence_module._fsync_directory(Path("C:/evidence"))
+            evidence_module._fsync_directory(directory)
 
         open_directory.assert_not_called()
         fsync_directory.assert_not_called()
