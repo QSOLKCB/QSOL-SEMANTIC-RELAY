@@ -69,7 +69,7 @@ class BoardTests(unittest.TestCase):
                 self.seed = seed
 
             def randrange(self, upper: int) -> int:
-                self.calls += 1
+                type(self).calls += 1
                 return 0
 
         board = "Z000000 Z000001"
