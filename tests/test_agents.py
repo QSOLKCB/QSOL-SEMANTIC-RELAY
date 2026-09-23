@@ -7,10 +7,22 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from semantic_relay.agents import CommandAgent
+from semantic_relay.agents import CommandAgent, _split_command
 
 
 class AgentTests(unittest.TestCase):
+    def test_windows_command_parsing_preserves_backslashes(self) -> None:
+        self.assertEqual(
+            _split_command(r"python scripts\client.py", windows=True),
+            ("python", r"scripts\client.py"),
+        )
+
+    def test_windows_command_parsing_strips_grouping_quotes(self) -> None:
+        self.assertEqual(
+            _split_command(r'python "scripts\client file.py"', windows=True),
+            ("python", r"scripts\client file.py"),
+        )
+
     def test_label_preserves_argument_boundaries(self) -> None:
         agent = CommandAgent(
             ("python", "-c", "print('two words')", "argument with spaces", "semi;colon")
