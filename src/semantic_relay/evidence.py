@@ -89,6 +89,12 @@ def _file_descriptor(raw: bytes) -> dict[str, Any]:
 
 
 def _fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        # Python's portable os.open/os.fsync path cannot sync directory handles
+        # on native Windows. The completed manifest file itself is still fsync'd
+        # before the atomic no-clobber hard-link publication.
+        return
+
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     try:
         directory_fd = os.open(path, flags)
