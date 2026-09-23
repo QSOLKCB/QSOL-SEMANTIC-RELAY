@@ -14,6 +14,8 @@ import uuid
 from .agents import Agent, CommandAgent
 from .board import CONDITIONS, sha256_text, transform_board, truncate_words
 
+RESULT_SCHEMA = "qsol.semantic-relay.result.v1"
+
 
 @dataclass(frozen=True)
 class Experiment:
@@ -126,7 +128,28 @@ def run_replication(
     reader: Agent,
     replication_index: int,
     base_seed: int,
+    *,
+    run_id: str | None = None,
+    requested_replicates: int | None = None,
 ) -> list[dict[str, Any]]:
+    if (run_id is None) != (requested_replicates is None):
+        raise ValueError("run_id and requested_replicates must be provided together")
+    if run_id is not None:
+        if not isinstance(run_id, str) or not run_id.strip():
+            raise ValueError("run_id must be a non-empty string")
+        try:
+            uuid.UUID(run_id)
+        except ValueError as exc:
+            raise ValueError("run_id must be a UUID") from exc
+        if (
+            isinstance(requested_replicates, bool)
+            or not isinstance(requested_replicates, int)
+            or requested_replicates <= 0
+        ):
+            raise ValueError("requested_replicates must be a positive integer")
+        if not 0 <= replication_index < requested_replicates:
+            raise ValueError("replication_index must be within requested_replicates")
+
     prewrite_board = ""
     writer_raw = writer.invoke(writer_prompt(experiment))
     real_board = truncate_words(writer_raw, experiment.writer_word_budget)
@@ -173,6 +196,14 @@ def run_replication(
             "correct": normalize_answer(observed)
             == normalize_answer(experiment.expected_answer),
         }
+        if run_id is not None:
+            record = {
+                "schema": RESULT_SCHEMA,
+                "run_id": run_id,
+                "requested_replicates": requested_replicates,
+                "base_seed": base_seed,
+                **record,
+            }
         records.append(record)
     return records
 
@@ -249,6 +280,7 @@ def main() -> int:
     except FileExistsError as exc:
         raise SystemExit(str(exc)) from exc
 
+    run_id = str(uuid.uuid4())
     all_records: list[dict[str, Any]] = []
     try:
         for replication_index in range(args.replicates):
@@ -258,6 +290,8 @@ def main() -> int:
                 reader,
                 replication_index=replication_index,
                 base_seed=args.seed,
+                run_id=run_id,
+                requested_replicates=args.replicates,
             )
             all_records.extend(records)
             scores = ", ".join(
