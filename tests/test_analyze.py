@@ -2,6 +2,7 @@ import hashlib
 import json
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 from semantic_relay.analyze import ValidationError, analyze_file, analyze_records
@@ -131,6 +132,41 @@ class AnalyzeTests(unittest.TestCase):
         with self.assertRaisesRegex(
             ValidationError,
             "experiment_input_sha256 must contain exactly 64 hexadecimal digits",
+        ):
+            analyze_records(records, source_jsonl_sha256="0" * 64)
+
+    def test_load_jsonl_rejects_duplicate_record_keys(self) -> None:
+        records = self.make_records(1)
+        lines = [json.dumps(record, sort_keys=True) for record in records]
+        lines[0] = lines[0].replace(
+            "{",
+            '{"reader_output":"AMBIGUOUS",',
+            1,
+        )
+        raw = ("\n".join(lines) + "\n").encode("utf-8")
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "duplicate-key.jsonl"
+            path.write_bytes(raw)
+            with self.assertRaisesRegex(
+                ValidationError,
+                "line 1 contains duplicate JSON key: reader_output",
+            ):
+                analyze_file(path)
+
+    def test_rejects_semantically_duplicate_replication_uuids(self) -> None:
+        records = self.make_records(2)
+        shared = uuid.UUID("12345678-1234-5678-1234-567812345678")
+        for record in records:
+            record["replication_id"] = (
+                str(shared)
+                if record["replication_index"] == 0
+                else "{" + str(shared) + "}"
+            )
+
+        with self.assertRaisesRegex(
+            ValidationError,
+            "replication_id must be unique across replications",
         ):
             analyze_records(records, source_jsonl_sha256="0" * 64)
 
