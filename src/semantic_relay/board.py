@@ -4,6 +4,29 @@ import hashlib
 import random
 
 CONDITIONS = ("REAL", "NULL", "SHUFFLED", "RANDOM")
+_RANDOM_TOKEN_SPACE = 1_000_000
+_RANDOM_COLLISION_ATTEMPTS = 1024
+
+
+def _is_random_namespace_token(token: str) -> bool:
+    return (
+        len(token) == 7
+        and token.startswith("Z")
+        and token[1:].isascii()
+        and token[1:].isdigit()
+    )
+
+
+def _find_available_random_token(
+    writer_tokens: set[str],
+    start: int,
+) -> str:
+    for offset in range(_RANDOM_TOKEN_SPACE):
+        value = (start + offset) % _RANDOM_TOKEN_SPACE
+        candidate = f"Z{value:06d}"
+        if candidate not in writer_tokens:
+            return candidate
+    raise ValueError("RANDOM control token namespace is exhausted")
 
 
 def sha256_text(text: str) -> str:
@@ -45,11 +68,25 @@ def transform_board(real_board: str, condition: str, seed: int) -> str:
         return " ".join(shuffled)
 
     writer_tokens = set(tokens)
+    namespace_token_count = sum(
+        1 for token in writer_tokens if _is_random_namespace_token(token)
+    )
+    if namespace_token_count >= _RANDOM_TOKEN_SPACE:
+        raise ValueError("RANDOM control token namespace is exhausted")
+
     random_tokens: list[str] = []
+    fallback_candidate: str | None = None
     for _ in tokens:
-        while True:
-            candidate = f"Z{rng.randrange(1_000_000):06d}"
+        for _attempt in range(_RANDOM_COLLISION_ATTEMPTS):
+            candidate = f"Z{rng.randrange(_RANDOM_TOKEN_SPACE):06d}"
             if candidate not in writer_tokens:
                 random_tokens.append(candidate)
                 break
+        else:
+            if fallback_candidate is None:
+                fallback_candidate = _find_available_random_token(
+                    writer_tokens,
+                    rng.randrange(_RANDOM_TOKEN_SPACE),
+                )
+            random_tokens.append(fallback_candidate)
     return " ".join(random_tokens)
