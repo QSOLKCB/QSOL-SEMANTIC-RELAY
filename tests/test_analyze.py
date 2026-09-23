@@ -3,10 +3,11 @@ import json
 import tempfile
 import unittest
 import uuid
+from unittest.mock import patch
 from pathlib import Path
 
 from semantic_relay.analyze import ValidationError, analyze_file, analyze_records
-from semantic_relay.board import sha256_text
+from semantic_relay.board import sha256_text, transform_board
 from semantic_relay.runner import Experiment, run_replication
 
 
@@ -199,6 +200,37 @@ class AnalyzeTests(unittest.TestCase):
             "replication_id must be unique across replications",
         ):
             analyze_records(records, source_jsonl_sha256="0" * 64)
+
+    def test_rejects_exhausted_random_namespace_without_hanging(self) -> None:
+        records = self.make_records(1)
+        writer_board = "Z000000 Z000001 Z000002"
+        writer_hash = sha256_text(writer_board)
+
+        with patch("semantic_relay.board._RANDOM_TOKEN_SPACE", 3):
+            for record in records:
+                record["writer_board"] = writer_board
+                record["writer_board_sha256"] = writer_hash
+                condition = record["condition"]
+                if condition == "REAL":
+                    reader_board = writer_board
+                elif condition == "NULL":
+                    reader_board = ""
+                elif condition == "SHUFFLED":
+                    reader_board = transform_board(
+                        writer_board,
+                        condition,
+                        record["seed"],
+                    )
+                else:
+                    reader_board = "unreachable-random-board"
+                record["reader_board"] = reader_board
+                record["reader_board_sha256"] = sha256_text(reader_board)
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "RANDOM transform invalid: RANDOM control token namespace is exhausted",
+            ):
+                analyze_records(records, source_jsonl_sha256="0" * 64)
 
     def test_accepts_uppercase_writer_board_digests_consistently(self) -> None:
         records = self.make_records(1)
