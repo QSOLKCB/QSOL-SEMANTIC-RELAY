@@ -29,14 +29,17 @@ Implementation contract:
 - an independent analyzer recomputes deterministic condition order, condition seeds, board transforms, hashes, and exact-answer scoring;
 - an optional frozen experiment fixture verifies the complete experiment-input hash;
 - summaries report descriptive accuracy and paired `REAL`-vs-control outcomes;
-- the analyzer does not perform significance testing or make claims beyond the observed run.
+- the analyzer does not perform significance testing or make claims beyond the observed run;
+- an evidence manifest binds the raw JSONL, analyzer summary, experiment fixture, model/runtime identity, commands, repository commit, seed, and replication count into one verifiable retention record.
 
 Evidence exit criteria:
 
 - at least one documented local-model run is collected with a predeclared replication count;
 - the raw JSONL validates against the frozen Experiment 001 fixture;
-- model identifier, runtime version, exact command, repository commit, base seed, replication count, raw JSONL SHA-256, and analyzer summary are retained together;
+- model identifier, runtime version, exact command, repository commit, base seed, replication count, raw JSONL SHA-256, and analyzer summary are retained together in a `qsol.semantic-relay.evidence.v1` evidence package;
 - any failed or invalid run remains distinguishable from a publishable complete run.
+
+See `PHASE1-EVIDENCE.md` for the evidence-retention gate.
 
 ## Phase 2 — Semantic compression — blocked on Phase 1 evidence
 
