@@ -275,6 +275,22 @@ class EvidenceTests(unittest.TestCase):
                     experiment_path=experiment_path,
                 )
 
+    def test_manifest_publication_syncs_directory_entries(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "run.evidence.json"
+
+            with patch(
+                "semantic_relay.evidence._fsync_directory"
+            ) as sync_directory:
+                write_manifest(path, {"schema": EVIDENCE_SCHEMA})
+
+            self.assertTrue(path.exists())
+            self.assertEqual(
+                sync_directory.call_args_list,
+                [unittest.mock.call(root), unittest.mock.call(root)],
+            )
+
     def test_manifest_write_failure_publishes_no_partial_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
