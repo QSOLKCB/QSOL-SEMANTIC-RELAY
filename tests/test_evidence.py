@@ -2,7 +2,7 @@ import hashlib
 import json
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import call, patch
 from pathlib import Path
 
 from semantic_relay import evidence as evidence_module
@@ -288,7 +288,7 @@ class EvidenceTests(unittest.TestCase):
             self.assertTrue(path.exists())
             self.assertEqual(
                 sync_directory.call_args_list,
-                [unittest.mock.call(root), unittest.mock.call(root)],
+                [call(root), call(root)],
             )
 
     def test_manifest_write_failure_publishes_no_partial_file(self) -> None:
