@@ -30,6 +30,25 @@ _SAFE_ENV_KEYS = (
 )
 
 
+def _split_command(command: str, *, windows: bool | None = None) -> tuple[str, ...]:
+    """Split a command string without destroying Windows path separators."""
+    if windows is None:
+        windows = os.name == "nt"
+
+    if not windows:
+        return tuple(shlex.split(command))
+
+    argv = shlex.split(command, posix=False)
+    return tuple(
+        argument[1:-1]
+        if len(argument) >= 2
+        and argument[0] == argument[-1]
+        and argument[0] in {'"', "'"}
+        else argument
+        for argument in argv
+    )
+
+
 @dataclass(frozen=True)
 class CommandAgent:
     """Invoke one fresh, restricted subprocess per prompt.
@@ -43,8 +62,8 @@ class CommandAgent:
     Explicit relative path arguments such as `./client` or `scripts/client.py`
     are resolved against the invocation directory before the subprocess switches to
     its fresh empty working directory. Bare command arguments are left unchanged.
-    `shell=False` is intentional: commands are parsed once with `shlex.split` and
-    executed directly.
+    `shell=False` is intentional: command strings are split using platform-aware
+    quoting rules and executed directly.
     """
 
     command: tuple[str, ...]
@@ -52,7 +71,7 @@ class CommandAgent:
 
     @classmethod
     def from_string(cls, command: str, timeout_seconds: float = 120.0) -> "CommandAgent":
-        argv = tuple(shlex.split(command))
+        argv = _split_command(command)
         if not argv:
             raise ValueError("agent command must not be empty")
 
