@@ -275,6 +275,17 @@ class EvidenceTests(unittest.TestCase):
                     experiment_path=experiment_path,
                 )
 
+    def test_directory_fsync_is_skipped_on_windows(self) -> None:
+        with (
+            patch("semantic_relay.evidence.os.name", "nt"),
+            patch("semantic_relay.evidence.os.open") as open_directory,
+            patch("semantic_relay.evidence.os.fsync") as fsync_directory,
+        ):
+            evidence_module._fsync_directory(Path("C:/evidence"))
+
+        open_directory.assert_not_called()
+        fsync_directory.assert_not_called()
+
     def test_manifest_publication_syncs_directory_entries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
