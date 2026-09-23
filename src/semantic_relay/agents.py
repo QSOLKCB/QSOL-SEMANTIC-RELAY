@@ -5,6 +5,7 @@ import os
 import shlex
 import subprocess
 import tempfile
+from pathlib import Path
 from typing import Protocol
 
 
@@ -39,6 +40,8 @@ class CommandAgent:
     environment allowlist. It is not a general-purpose OS security sandbox.
 
     The command receives the prompt on stdin and must emit its response on stdout.
+    Existing relative path arguments are resolved against the invocation directory
+    before the subprocess switches to its fresh empty working directory.
     `shell=False` is intentional: commands are parsed once with `shlex.split` and
     executed directly.
     """
@@ -51,7 +54,18 @@ class CommandAgent:
         argv = tuple(shlex.split(command))
         if not argv:
             raise ValueError("agent command must not be empty")
-        return cls(argv, timeout_seconds)
+
+        invocation_dir = Path.cwd()
+        resolved_argv: list[str] = []
+        for argument in argv:
+            candidate = Path(argument)
+            if not candidate.is_absolute():
+                invocation_candidate = invocation_dir / candidate
+                if invocation_candidate.exists():
+                    argument = str(invocation_candidate.resolve())
+            resolved_argv.append(argument)
+
+        return cls(tuple(resolved_argv), timeout_seconds)
 
     @property
     def label(self) -> str:
