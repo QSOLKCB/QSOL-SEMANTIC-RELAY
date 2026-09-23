@@ -200,6 +200,18 @@ class AnalyzeTests(unittest.TestCase):
         ):
             analyze_records(records, source_jsonl_sha256="0" * 64)
 
+    def test_accepts_uppercase_writer_board_digests_consistently(self) -> None:
+        records = self.make_records(1)
+        for record in records:
+            record["writer_board_sha256"] = record["writer_board_sha256"].upper()
+
+        summary = analyze_records(
+            records,
+            source_jsonl_sha256="0" * 64,
+            experiment=self.experiment,
+        )
+        self.assertEqual(summary["validation"], "valid")
+
     def test_rejects_seed_drift(self) -> None:
         records = self.make_records()
         records[0] = dict(records[0])
