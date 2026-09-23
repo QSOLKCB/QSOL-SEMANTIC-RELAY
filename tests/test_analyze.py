@@ -87,6 +87,13 @@ class AnalyzeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, "reader_board mismatch"):
             analyze_records(records, source_jsonl_sha256="0" * 64)
 
+    def test_rejects_non_string_condition_cleanly(self) -> None:
+        records = self.make_records()
+        records[0] = dict(records[0])
+        records[0]["condition"] = ["REAL"]
+        with self.assertRaisesRegex(ValidationError, "condition must be a string"):
+            analyze_records(records, source_jsonl_sha256="0" * 64)
+
     def test_rejects_seed_drift(self) -> None:
         records = self.make_records()
         records[0] = dict(records[0])
