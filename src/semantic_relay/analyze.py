@@ -284,7 +284,14 @@ def _validate_records(
             f"replication {replication_index} has multiple writer boards",
         )
         _require(
-            all(record["writer_board_sha256"] == writer_hash for record in group),
+            all(
+                _require_sha256(
+                    record["writer_board_sha256"],
+                    "writer_board_sha256",
+                )
+                == writer_hash
+                for record in group
+            ),
             f"replication {replication_index} has multiple writer board hashes",
         )
         _require(
