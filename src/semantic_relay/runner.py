@@ -190,7 +190,7 @@ def prepare_output(path: Path) -> Path:
             "only if no run is active"
         ) from exc
 
-    if path.exists():
+    if os.path.lexists(path):
         reservation.unlink(missing_ok=True)
         raise FileExistsError(
             f"output already exists: {path}; choose a new --output or remove it explicitly"
