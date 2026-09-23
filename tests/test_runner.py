@@ -79,6 +79,34 @@ class RunnerTests(unittest.TestCase):
             run_replication(self.experiment, LowDiversityWriter(), reader, 0, 123)
         self.assertEqual(reader.prompts, [])
 
+    def test_phase1_rejects_boolean_replication_index_before_writer_call(self) -> None:
+        writer = FakeWriter()
+        with self.assertRaisesRegex(ValueError, "replication_index must be an integer"):
+            run_replication(
+                self.experiment,
+                writer,
+                FakeReader(),
+                True,
+                123,
+                run_id="00000000-0000-4000-8000-000000000001",
+                requested_replicates=2,
+            )
+        self.assertFalse(hasattr(writer, "last_prompt"))
+
+    def test_phase1_rejects_boolean_base_seed_before_writer_call(self) -> None:
+        writer = FakeWriter()
+        with self.assertRaisesRegex(ValueError, "base_seed must be an integer"):
+            run_replication(
+                self.experiment,
+                writer,
+                FakeReader(),
+                0,
+                True,
+                run_id="00000000-0000-4000-8000-000000000001",
+                requested_replicates=2,
+            )
+        self.assertFalse(hasattr(writer, "last_prompt"))
+
     def test_phase1_run_metadata_is_recorded_consistently(self) -> None:
         run_id = "00000000-0000-4000-8000-000000000001"
         records = run_replication(
