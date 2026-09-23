@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import hashlib
 import json
 from pathlib import Path
 import random
@@ -70,18 +71,24 @@ def _require_string(value: Any, field: str, *, nonempty: bool = True) -> str:
 
 def _require_sha256(value: Any, field: str) -> str:
     text = _require_string(value, field)
-    _require(len(text) == 64, f"{field} must be a 64-character SHA-256")
-    try:
-        int(text, 16)
-    except ValueError as exc:
-        raise ValidationError(f"{field} must be hexadecimal") from exc
+    _require(
+        len(text) == 64
+        and all(character in "0123456789abcdefABCDEF" for character in text),
+        f"{field} must contain exactly 64 hexadecimal digits",
+    )
     return text.lower()
 
 
 def _single(records: list[dict[str, Any]], field: str) -> Any:
     first = records[0][field]
+    first_type = type(first)
     for record in records[1:]:
-        _require(record[field] == first, f"{field} must be constant across the run")
+        value = record[field]
+        _require(
+            type(value) is first_type,
+            f"{field} must have the same type across the run",
+        )
+        _require(value == first, f"{field} must be constant across the run")
     return first
 
 
@@ -92,12 +99,16 @@ def _expected_condition_order(base_seed: int, replication_index: int) -> tuple[t
     return tuple(conditions), order_seed
 
 
-def load_jsonl(path: Path) -> tuple[str, list[dict[str, Any]]]:
-    raw = path.read_text(encoding="utf-8")
+def load_jsonl(path: Path) -> tuple[bytes, list[dict[str, Any]]]:
+    raw = path.read_bytes()
     _require(bool(raw.strip()), "result JSONL must not be empty")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValidationError("result JSONL must be valid UTF-8") from exc
 
     records: list[dict[str, Any]] = []
-    for line_number, line in enumerate(raw.splitlines(), start=1):
+    for line_number, line in enumerate(text.splitlines(), start=1):
         _require(bool(line.strip()), f"line {line_number} must not be blank")
         try:
             record = json.loads(line)
@@ -453,7 +464,7 @@ def analyze_file(
     experiment = load_experiment(experiment_path) if experiment_path is not None else None
     return analyze_records(
         records,
-        source_jsonl_sha256=sha256_text(raw),
+        source_jsonl_sha256=hashlib.sha256(raw).hexdigest(),
         experiment=experiment,
     )
 
