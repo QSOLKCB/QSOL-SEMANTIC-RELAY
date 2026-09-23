@@ -20,7 +20,9 @@ class AgentTests(unittest.TestCase):
     def test_relative_script_path_is_resolved_before_workdir_isolation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            script = root / "client.py"
+            scripts = root / "scripts"
+            scripts.mkdir()
+            script = scripts / "client.py"
             script.write_text(
                 "import sys; print('SEEN:' + sys.stdin.read().strip())\n",
                 encoding="utf-8",
@@ -29,13 +31,26 @@ class AgentTests(unittest.TestCase):
             os.chdir(root)
             try:
                 agent = CommandAgent.from_string(
-                    f"{shlex.quote(sys.executable)} client.py"
+                    f"{shlex.quote(sys.executable)} scripts/client.py"
                 )
             finally:
                 os.chdir(previous)
 
             self.assertEqual(Path(agent.command[1]), script.resolve())
             self.assertEqual(agent.invoke("hello"), "SEEN:hello")
+
+    def test_bare_argument_is_not_rewritten_when_matching_local_entry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "run").write_text("not an argument path\n", encoding="utf-8")
+            previous = Path.cwd()
+            os.chdir(root)
+            try:
+                agent = CommandAgent.from_string("ollama run qwen2.5:3b")
+            finally:
+                os.chdir(previous)
+
+            self.assertEqual(agent.command, ("ollama", "run", "qwen2.5:3b"))
 
     def test_invoke_uses_empty_workdir_and_stripped_environment(self) -> None:
         code = (
