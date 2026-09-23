@@ -79,6 +79,64 @@ class RunnerTests(unittest.TestCase):
             run_replication(self.experiment, LowDiversityWriter(), reader, 0, 123)
         self.assertEqual(reader.prompts, [])
 
+    def test_phase1_rejects_boolean_replication_index_before_writer_call(self) -> None:
+        writer = FakeWriter()
+        with self.assertRaisesRegex(ValueError, "replication_index must be an integer"):
+            run_replication(
+                self.experiment,
+                writer,
+                FakeReader(),
+                True,
+                123,
+                run_id="00000000-0000-4000-8000-000000000001",
+                requested_replicates=2,
+            )
+        self.assertFalse(hasattr(writer, "last_prompt"))
+
+    def test_phase1_rejects_boolean_base_seed_before_writer_call(self) -> None:
+        writer = FakeWriter()
+        with self.assertRaisesRegex(ValueError, "base_seed must be an integer"):
+            run_replication(
+                self.experiment,
+                writer,
+                FakeReader(),
+                0,
+                True,
+                run_id="00000000-0000-4000-8000-000000000001",
+                requested_replicates=2,
+            )
+        self.assertFalse(hasattr(writer, "last_prompt"))
+
+    def test_phase1_run_metadata_is_recorded_consistently(self) -> None:
+        run_id = "00000000-0000-4000-8000-000000000001"
+        records = run_replication(
+            self.experiment,
+            FakeWriter(),
+            FakeReader(),
+            1,
+            123,
+            run_id=run_id,
+            requested_replicates=3,
+        )
+        self.assertEqual({record["schema"] for record in records}, {"qsol.semantic-relay.result.v1"})
+        self.assertEqual({record["run_id"] for record in records}, {run_id})
+        self.assertEqual({record["requested_replicates"] for record in records}, {3})
+        self.assertEqual({record["base_seed"] for record in records}, {123})
+
+    def test_phase1_run_metadata_requires_complete_context(self) -> None:
+        with self.assertRaisesRegex(
+            ValueError,
+            "run_id and requested_replicates must be provided together",
+        ):
+            run_replication(
+                self.experiment,
+                FakeWriter(),
+                FakeReader(),
+                0,
+                123,
+                run_id="00000000-0000-4000-8000-000000000001",
+            )
+
     def test_condition_order_is_deterministic_and_not_fixed_tuple(self) -> None:
         first = run_replication(self.experiment, FakeWriter(), FakeReader(), 0, 123)
         second = run_replication(self.experiment, FakeWriter(), FakeReader(), 0, 123)

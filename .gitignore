@@ -2,4 +2,5 @@ __pycache__/
 *.py[cod]
 .venv/
 results/*.jsonl
+results/*.analysis.json
 !results/README.md
