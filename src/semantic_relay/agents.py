@@ -102,6 +102,16 @@ def _split_command(command: str, *, windows: bool | None = None) -> tuple[str, .
     return tuple(shlex.split(command))
 
 
+def _join_command(command: tuple[str, ...], *, windows: bool | None = None) -> str:
+    """Serialize argv using the host platform's command-line quoting rules."""
+    if windows is None:
+        windows = os.name == "nt"
+
+    if windows:
+        return subprocess.list2cmdline(command)
+    return shlex.join(command)
+
+
 @dataclass(frozen=True)
 class CommandAgent:
     """Invoke one fresh, restricted subprocess per prompt.
@@ -150,7 +160,7 @@ class CommandAgent:
 
     @property
     def label(self) -> str:
-        return shlex.join(self.command)
+        return _join_command(self.command)
 
     def invoke(self, prompt: str) -> str:
         env = {key: os.environ[key] for key in _SAFE_ENV_KEYS if key in os.environ}
