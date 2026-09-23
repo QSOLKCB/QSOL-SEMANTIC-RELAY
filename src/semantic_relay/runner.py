@@ -199,7 +199,7 @@ def prepare_output(path: Path) -> Path:
 
 
 def publish_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
-    """Write complete records to a sibling temp file, then publish atomically."""
+    """Write complete records to a sibling temp file, then publish without clobbering."""
     temp_path: Path | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -215,7 +215,9 @@ def publish_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
                 handle.write(json.dumps(record, sort_keys=True) + "\n")
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp_path, path)
+        os.link(temp_path, path)
+        temp_path.unlink()
+        temp_path = None
     except BaseException:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
