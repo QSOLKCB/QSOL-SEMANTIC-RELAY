@@ -99,6 +99,20 @@ def _expected_condition_order(base_seed: int, replication_index: int) -> tuple[t
     return tuple(conditions), order_seed
 
 
+def _object_without_duplicate_keys(
+    pairs: list[tuple[str, Any]],
+    line_number: int,
+) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        _require(
+            key not in result,
+            f"line {line_number} contains duplicate JSON key: {key}",
+        )
+        result[key] = value
+    return result
+
+
 def load_jsonl(path: Path) -> tuple[bytes, list[dict[str, Any]]]:
     raw = path.read_bytes()
     _require(bool(raw.strip()), "result JSONL must not be empty")
@@ -111,7 +125,13 @@ def load_jsonl(path: Path) -> tuple[bytes, list[dict[str, Any]]]:
     for line_number, line in enumerate(text.splitlines(), start=1):
         _require(bool(line.strip()), f"line {line_number} must not be blank")
         try:
-            record = json.loads(line)
+            record = json.loads(
+                line,
+                object_pairs_hook=lambda pairs: _object_without_duplicate_keys(
+                    pairs,
+                    line_number,
+                ),
+            )
         except json.JSONDecodeError as exc:
             raise ValidationError(f"line {line_number} is not valid JSON: {exc.msg}") from exc
         _require(isinstance(record, dict), f"line {line_number} must contain a JSON object")
@@ -204,7 +224,7 @@ def _validate_records(
         "replication indices must be exactly 0..requested_replicates-1",
     )
 
-    seen_replication_ids: set[str] = set()
+    seen_replication_ids: set[uuid.UUID] = set()
     empty_hash = sha256_text("")
 
     for replication_index in range(requested_replicates):
@@ -220,14 +240,14 @@ def _validate_records(
             f"replication {replication_index} has multiple replication_id values",
         )
         try:
-            uuid.UUID(replication_id)
+            parsed_replication_id = uuid.UUID(replication_id)
         except ValueError as exc:
             raise ValidationError("replication_id must be a UUID") from exc
         _require(
-            replication_id not in seen_replication_ids,
+            parsed_replication_id not in seen_replication_ids,
             "replication_id must be unique across replications",
         )
-        seen_replication_ids.add(replication_id)
+        seen_replication_ids.add(parsed_replication_id)
 
         timestamp = _require_string(group[0]["timestamp_utc"], "timestamp_utc")
         _require(
