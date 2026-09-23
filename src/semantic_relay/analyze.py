@@ -113,6 +113,15 @@ def _object_without_duplicate_keys(
     return result
 
 
+def _reject_non_finite_json_constant(
+    constant: str,
+    line_number: int,
+) -> None:
+    raise ValidationError(
+        f"line {line_number} contains non-finite JSON constant: {constant}"
+    )
+
+
 def load_jsonl(path: Path) -> tuple[bytes, list[dict[str, Any]]]:
     raw = path.read_bytes()
     _require(bool(raw.strip()), "result JSONL must not be empty")
@@ -129,6 +138,10 @@ def load_jsonl(path: Path) -> tuple[bytes, list[dict[str, Any]]]:
                 line,
                 object_pairs_hook=lambda pairs: _object_without_duplicate_keys(
                     pairs,
+                    line_number,
+                ),
+                parse_constant=lambda constant: _reject_non_finite_json_constant(
+                    constant,
                     line_number,
                 ),
             )
