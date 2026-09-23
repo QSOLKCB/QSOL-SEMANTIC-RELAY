@@ -4,7 +4,7 @@ Minimal research repository for testing whether task-relevant semantic state can
 
 > Can semantic state persist between independently instantiated agents when the only shared state is an external writable artifact?
 
-This repository intentionally starts small. Phase 0 contains one falsifiable experiment, four controls, a standard-library-only Python harness, fresh subprocess agent invocations, synthetic fixtures, hashes, and tests.
+This repository intentionally starts small. Phase 0 established one falsifiable relay experiment and its isolation/control invariants. Phase 1 adds self-describing run identity, strict artifact validation, and descriptive paired analysis so real local-model evidence can be collected before the protocol expands.
 
 ## Phase 0 hypothesis
 
@@ -66,10 +66,28 @@ Each invocation is a new subprocess. The harness gives it a fresh empty working 
 
 The output path must be fresh for each CLI invocation. The runner creates a sidecar reservation before any model call and exits if the path already exists or is already reserved, preventing separate runs from being silently mixed. The final JSONL path is not created until every requested replication succeeds; complete records are written to a sibling temporary file and then published atomically. Failed runs therefore do not leave a valid-looking partial result file. Choose a new `--output` path or explicitly remove the old result file before rerunning.
 
+## Phase 1 validation and analysis
+
+Phase 1 keeps the Phase 0 semantic task unchanged. Each CLI-produced record now includes a result schema, one run UUID, the requested replication count, and the base seed. This makes a complete invocation distinguishable from a truncated prefix or a mixture of runs.
+
+Validate a raw run against the frozen Experiment 001 fixture and produce a descriptive summary:
+
+```bash
+PYTHONPATH=src python -m semantic_relay.analyze \
+  --input results/exp001.jsonl \
+  --experiment experiments/001-relay.json \
+  --output results/exp001.analysis.json
+```
+
+The analyzer independently checks replication completeness, condition membership/order, deterministic seeds, board transformations, hashes, word-budget compliance, and exact-answer scoring. It reports condition accuracies and paired `REAL`-vs-control outcomes. It deliberately performs no significance test.
+
+See [`PHASE1.md`](PHASE1.md) for the validation contract and [`ROADMAP.md`](ROADMAP.md) for the staged progression toward semantic compression and multi-hop persistence.
+
 ## Recorded provenance
 
-Each JSONL record includes:
+Each Phase 1 JSONL record includes:
 
+- result schema, run UUID, requested replication count, and base seed;
 - experiment and replication identifiers;
 - a SHA-256 hash of the complete validated experiment input;
 - condition, deterministic transform seed, execution index, and condition-order seed;
@@ -94,4 +112,4 @@ Phase 0 deliberately has:
 - no tool-capable agents;
 - no Kubernetes. Absolutely no fucking Kubernetes. :-)
 
-See [`PROTOCOL.md`](PROTOCOL.md) for the experimental contract.
+See [`PROTOCOL.md`](PROTOCOL.md) for the frozen Phase 0 experimental contract, [`PHASE1.md`](PHASE1.md) for apparatus validation, and [`ROADMAP.md`](ROADMAP.md) for later phases.
