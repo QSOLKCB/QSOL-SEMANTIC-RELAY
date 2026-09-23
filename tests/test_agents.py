@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from semantic_relay.agents import CommandAgent, _split_command
+from semantic_relay.agents import CommandAgent, _join_command, _split_command
 
 
 class AgentTests(unittest.TestCase):
@@ -44,6 +44,22 @@ class AgentTests(unittest.TestCase):
             with self.subTest(argv=argv):
                 command = subprocess.list2cmdline(argv)
                 self.assertEqual(_split_command(command, windows=True), argv)
+
+    def test_windows_command_label_round_trips_argv(self) -> None:
+        cases = (
+            ("python", "-c", 'print("hello world")'),
+            ("tool.exe", r"C:\\Program Files\\relay\\client.exe", "argument with spaces"),
+            ("tool.exe", r'{"key":"two words"}', r"trailing\\"),
+        )
+        for argv in cases:
+            with self.subTest(argv=argv):
+                label = _join_command(argv, windows=True)
+                self.assertEqual(_split_command(label, windows=True), argv)
+
+    def test_posix_command_label_round_trips_argv(self) -> None:
+        argv = ("python", "-c", "print('two words')", "argument with spaces", "semi;colon")
+        label = _join_command(argv, windows=False)
+        self.assertEqual(_split_command(label, windows=False), argv)
 
     def test_label_preserves_argument_boundaries(self) -> None:
         agent = CommandAgent(
