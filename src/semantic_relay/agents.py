@@ -30,23 +30,76 @@ _SAFE_ENV_KEYS = (
 )
 
 
+def _split_windows_commandline(command: str) -> tuple[str, ...]:
+    """Parse a Windows command line using Microsoft backslash/quote rules."""
+    arguments: list[str] = []
+    length = len(command)
+    index = 0
+
+    while index < length:
+        while index < length and command[index] in " \t":
+            index += 1
+        if index >= length:
+            break
+
+        argument: list[str] = []
+        in_quotes = False
+
+        while index < length:
+            character = command[index]
+
+            if character in " \t" and not in_quotes:
+                break
+
+            if character == "\\":
+                slash_start = index
+                while index < length and command[index] == "\\":
+                    index += 1
+                slash_count = index - slash_start
+
+                if index < length and command[index] == '"':
+                    argument.extend("\\" * (slash_count // 2))
+                    if slash_count % 2:
+                        argument.append('"')
+                        index += 1
+                    elif in_quotes and index + 1 < length and command[index + 1] == '"':
+                        argument.append('"')
+                        index += 2
+                    else:
+                        in_quotes = not in_quotes
+                        index += 1
+                else:
+                    argument.extend("\\" * slash_count)
+                continue
+
+            if character == '"':
+                if in_quotes and index + 1 < length and command[index + 1] == '"':
+                    argument.append('"')
+                    index += 2
+                else:
+                    in_quotes = not in_quotes
+                    index += 1
+                continue
+
+            argument.append(character)
+            index += 1
+
+        arguments.append("".join(argument))
+
+        while index < length and command[index] in " \t":
+            index += 1
+
+    return tuple(arguments)
+
+
 def _split_command(command: str, *, windows: bool | None = None) -> tuple[str, ...]:
-    """Split a command string without destroying Windows path separators."""
+    """Split a command string using the host platform's argv quoting rules."""
     if windows is None:
         windows = os.name == "nt"
 
-    if not windows:
-        return tuple(shlex.split(command))
-
-    argv = shlex.split(command, posix=False)
-    return tuple(
-        argument[1:-1]
-        if len(argument) >= 2
-        and argument[0] == argument[-1]
-        and argument[0] in {'"', "'"}
-        else argument
-        for argument in argv
-    )
+    if windows:
+        return _split_windows_commandline(command)
+    return tuple(shlex.split(command))
 
 
 @dataclass(frozen=True)
