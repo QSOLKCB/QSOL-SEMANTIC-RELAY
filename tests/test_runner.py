@@ -4,8 +4,8 @@ from pathlib import Path
 
 from semantic_relay.runner import (
     Experiment,
-    append_jsonl,
     prepare_output,
+    publish_jsonl,
     reader_prompt,
     run_replication,
 )
@@ -97,20 +97,36 @@ class RunnerTests(unittest.TestCase):
         )
         self.assertNotEqual(self.experiment.input_sha256, changed.input_sha256)
 
-    def test_jsonl_append_to_reserved_file(self) -> None:
+    def test_publish_jsonl_only_creates_final_file_after_complete_write(self) -> None:
         records = run_replication(self.experiment, FakeWriter(), FakeReader(), 2, 123)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "result.jsonl"
-            prepare_output(path)
-            append_jsonl(path, records)
+            reservation = prepare_output(path)
+            self.assertFalse(path.exists())
+            self.assertTrue(reservation.exists())
+
+            publish_jsonl(path, records)
+            reservation.unlink(missing_ok=True)
+
             self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), 4)
+            self.assertFalse(reservation.exists())
+
+    def test_prepare_output_rejects_existing_reservation(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "result.jsonl"
+            reservation = prepare_output(path)
+            self.assertFalse(path.exists())
+            with self.assertRaises(FileExistsError):
+                prepare_output(path)
+            reservation.unlink()
 
     def test_prepare_output_rejects_existing_file(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "result.jsonl"
-            prepare_output(path)
+            path.write_text("{}\n", encoding="utf-8")
             with self.assertRaises(FileExistsError):
                 prepare_output(path)
+            self.assertFalse((path.parent / f".{path.name}.lock").exists())
 
     def test_experiment_rejects_scalar_facts(self) -> None:
         raw = self.valid_raw_experiment()
@@ -137,6 +153,28 @@ class RunnerTests(unittest.TestCase):
         raw["expected_answer"] = "   "
         with self.assertRaisesRegex(ValueError, "expected_answer must be a non-empty string"):
             Experiment.from_dict(raw)
+
+    def test_experiment_rejects_invalid_id(self) -> None:
+        for experiment_id in (None, ["test"], "   "):
+            with self.subTest(experiment_id=experiment_id):
+                raw = self.valid_raw_experiment()
+                raw["id"] = experiment_id
+                with self.assertRaisesRegex(ValueError, "id must be a non-empty string"):
+                    Experiment.from_dict(raw)
+
+    def test_experiment_rejects_writer_budget_below_two(self) -> None:
+        raw = self.valid_raw_experiment()
+        raw["writer_word_budget"] = 1
+        with self.assertRaisesRegex(ValueError, "writer_word_budget must be at least 2"):
+            Experiment.from_dict(raw)
+
+    def test_experiment_rejects_non_integer_writer_budget(self) -> None:
+        for budget in (True, 2.5, "2"):
+            with self.subTest(budget=budget):
+                raw = self.valid_raw_experiment()
+                raw["writer_word_budget"] = budget
+                with self.assertRaisesRegex(ValueError, "writer_word_budget must be an integer"):
+                    Experiment.from_dict(raw)
 
 
 if __name__ == "__main__":
