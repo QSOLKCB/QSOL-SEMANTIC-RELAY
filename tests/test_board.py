@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 from semantic_relay.board import sha256_text, transform_board, truncate_words
 
@@ -40,6 +41,25 @@ class BoardTests(unittest.TestCase):
         self.assertEqual(len(random_board.split()), 2)
         self.assertNotIn("Z339563", random_board.split())
         self.assertTrue(set(random_board.split()).isdisjoint(board.split()))
+
+    def test_random_rejects_exhausted_token_namespace(self) -> None:
+        board = "Z000000 Z000001 Z000002"
+        with patch("semantic_relay.board._RANDOM_TOKEN_SPACE", 3):
+            with self.assertRaisesRegex(
+                ValueError,
+                "RANDOM control token namespace is exhausted",
+            ):
+                transform_board(board, "RANDOM", seed=7)
+
+    def test_random_fallback_terminates_near_namespace_exhaustion(self) -> None:
+        board = "Z000000 Z000001"
+        with (
+            patch("semantic_relay.board._RANDOM_TOKEN_SPACE", 3),
+            patch("semantic_relay.board._RANDOM_COLLISION_ATTEMPTS", 1),
+        ):
+            random_board = transform_board(board, "RANDOM", seed=7)
+        self.assertEqual(len(random_board.split()), 2)
+        self.assertEqual(set(random_board.split()), {"Z000002"})
 
     def test_null_is_empty(self) -> None:
         self.assertEqual(transform_board("anything", "NULL", seed=1), "")
