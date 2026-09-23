@@ -67,6 +67,18 @@ class RunnerTests(unittest.TestCase):
         execution_indices = sorted(r["condition_execution_index"] for r in records)
         self.assertEqual(execution_indices, [0, 1, 2, 3])
 
+    def test_invalid_shuffled_board_fails_before_any_reader_invocation(self) -> None:
+        class LowDiversityWriter:
+            label = "low-diversity-writer"
+
+            def invoke(self, prompt: str) -> str:
+                return "SAME SAME"
+
+        reader = FakeReader()
+        with self.assertRaises(ValueError):
+            run_replication(self.experiment, LowDiversityWriter(), reader, 0, 123)
+        self.assertEqual(reader.prompts, [])
+
     def test_condition_order_is_deterministic_and_not_fixed_tuple(self) -> None:
         first = run_replication(self.experiment, FakeWriter(), FakeReader(), 0, 123)
         second = run_replication(self.experiment, FakeWriter(), FakeReader(), 0, 123)
@@ -153,6 +165,16 @@ class RunnerTests(unittest.TestCase):
         raw["expected_answer"] = "   "
         with self.assertRaisesRegex(ValueError, "expected_answer must be a non-empty string"):
             Experiment.from_dict(raw)
+
+    def test_experiment_rejects_unknown_expected_answer(self) -> None:
+        for expected in ("UNKNOWN", "unknown", "  UnKnOwN  "):
+            with self.subTest(expected=expected):
+                raw = self.valid_raw_experiment()
+                raw["expected_answer"] = expected
+                with self.assertRaisesRegex(
+                    ValueError, "expected_answer must not use the reserved UNKNOWN sentinel"
+                ):
+                    Experiment.from_dict(raw)
 
     def test_experiment_rejects_invalid_id(self) -> None:
         for experiment_id in (None, ["test"], "   "):
