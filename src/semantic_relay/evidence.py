@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
+import tempfile
 from typing import Any
 
 from .analyze import ANALYSIS_SCHEMA, ValidationError, analyze_file
@@ -86,6 +88,37 @@ def _file_descriptor(raw: bytes) -> dict[str, Any]:
     }
 
 
+def _strict_equal(left: Any, right: Any) -> bool:
+    if type(left) is not type(right):
+        return False
+    if isinstance(left, dict):
+        if left.keys() != right.keys():
+            return False
+        return all(_strict_equal(left[key], right[key]) for key in left)
+    if isinstance(left, list):
+        return len(left) == len(right) and all(
+            _strict_equal(left_item, right_item)
+            for left_item, right_item in zip(left, right)
+        )
+    return left == right
+
+
+def _analyze_captured_artifacts(
+    raw_jsonl: bytes,
+    experiment_raw: bytes,
+) -> dict[str, Any]:
+    with tempfile.TemporaryDirectory(prefix="semantic-relay-evidence-") as directory:
+        snapshot_root = Path(directory)
+        input_snapshot = snapshot_root / "run.jsonl"
+        experiment_snapshot = snapshot_root / "experiment.json"
+        input_snapshot.write_bytes(raw_jsonl)
+        experiment_snapshot.write_bytes(experiment_raw)
+        return analyze_file(
+            input_snapshot,
+            experiment_path=experiment_snapshot,
+        )
+
+
 def build_evidence_manifest(
     *,
     input_path: Path,
@@ -109,9 +142,9 @@ def build_evidence_manifest(
     )
     experiment_raw = experiment_path.read_bytes()
 
-    expected_analysis = analyze_file(
-        input_path,
-        experiment_path=experiment_path,
+    expected_analysis = _analyze_captured_artifacts(
+        raw_jsonl,
+        experiment_raw,
     )
     _require(
         supplied_analysis == expected_analysis,
@@ -159,12 +192,34 @@ def build_evidence_manifest(
 
 def write_manifest(path: Path, manifest: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
     try:
-        with path.open("x", encoding="utf-8", newline="\n") as handle:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_path = Path(handle.name)
             json.dump(manifest, handle, indent=2, sort_keys=True)
             handle.write("\n")
-    except FileExistsError as exc:
-        raise ValidationError(f"evidence manifest already exists: {path}") from exc
+            handle.flush()
+            os.fsync(handle.fileno())
+
+        try:
+            os.link(temp_path, path)
+        except FileExistsError as exc:
+            raise ValidationError(f"evidence manifest already exists: {path}") from exc
+
+        temp_path.unlink()
+        temp_path = None
+    except BaseException:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+        raise
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
@@ -201,7 +256,7 @@ def verify_evidence_manifest(
         ),
     )
     _require(
-        manifest == rebuilt,
+        _strict_equal(manifest, rebuilt),
         "evidence manifest does not match supplied artifacts or metadata",
     )
     return rebuilt
