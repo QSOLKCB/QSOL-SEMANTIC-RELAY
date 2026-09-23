@@ -77,16 +77,19 @@ def transform_board(real_board: str, condition: str, seed: int) -> str:
     random_tokens: list[str] = []
     fallback_candidate: str | None = None
     for _ in tokens:
+        if fallback_candidate is not None:
+            random_tokens.append(fallback_candidate)
+            continue
+
         for _attempt in range(_RANDOM_COLLISION_ATTEMPTS):
             candidate = f"Z{rng.randrange(_RANDOM_TOKEN_SPACE):06d}"
             if candidate not in writer_tokens:
                 random_tokens.append(candidate)
                 break
         else:
-            if fallback_candidate is None:
-                fallback_candidate = _find_available_random_token(
-                    writer_tokens,
-                    rng.randrange(_RANDOM_TOKEN_SPACE),
-                )
+            fallback_candidate = _find_available_random_token(
+                writer_tokens,
+                rng.randrange(_RANDOM_TOKEN_SPACE),
+            )
             random_tokens.append(fallback_candidate)
     return " ".join(random_tokens)
