@@ -155,6 +155,20 @@ class RunnerTests(unittest.TestCase):
                 prepare_output(path)
             self.assertFalse((path.parent / f".{path.name}.lock").exists())
 
+    def test_prepare_output_rejects_dangling_symlink(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "result.jsonl"
+            missing_target = Path(directory) / "missing-target.jsonl"
+            path.symlink_to(missing_target)
+            self.assertFalse(path.exists())
+            self.assertTrue(path.is_symlink())
+
+            with self.assertRaises(FileExistsError):
+                prepare_output(path)
+
+            self.assertTrue(path.is_symlink())
+            self.assertFalse((path.parent / f".{path.name}.lock").exists())
+
     def test_experiment_rejects_scalar_facts(self) -> None:
         raw = self.valid_raw_experiment()
         raw["facts"] = "K17 has NEMU"
