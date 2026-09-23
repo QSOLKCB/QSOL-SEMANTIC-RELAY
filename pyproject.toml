@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "qsol-semantic-relay"
-version = "0.2.0"
+version = "0.2.1"
 description = "Minimal harness for semantic-state relay experiments between context-isolated language-model agents"
 requires-python = ">=3.11"
 license = {text = "Apache-2.0"}

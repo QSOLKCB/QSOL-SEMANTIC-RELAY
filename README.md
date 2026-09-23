@@ -81,7 +81,22 @@ PYTHONPATH=src python -m semantic_relay.analyze \
 
 The analyzer independently checks replication completeness, condition membership/order, deterministic seeds, board transformations, hashes, word-budget compliance, and exact-answer scoring. It reports condition accuracies and paired `REAL`-vs-control outcomes. It deliberately performs no significance test.
 
-See [`PHASE1.md`](PHASE1.md) for the validation contract and [`ROADMAP.md`](ROADMAP.md) for the staged progression toward semantic compression and multi-hop persistence.
+See [`PHASE1.md`](PHASE1.md) for the validation contract, [`PHASE1-EVIDENCE.md`](PHASE1-EVIDENCE.md) for evidence retention, and [`ROADMAP.md`](ROADMAP.md) for the staged progression toward semantic compression and multi-hop persistence.
+
+Create a retention manifest only after a real run has a fixture-backed analysis:
+
+```bash
+PYTHONPATH=src python -m semantic_relay.evidence create \
+  --input results/exp001.jsonl \
+  --analysis results/exp001.analysis.json \
+  --experiment experiments/001-relay.json \
+  --model-id "<model>" \
+  --runtime-version "<runtime version>" \
+  --repository-commit "<40-hex-commit>" \
+  --output results/exp001.evidence.json
+```
+
+The evidence tool re-runs the analyzer before creating the manifest, so a stale or edited analysis summary cannot be sealed as valid evidence.
 
 ## Recorded provenance
 
@@ -112,4 +127,4 @@ Phase 0 deliberately has:
 - no tool-capable agents;
 - no Kubernetes. Absolutely no fucking Kubernetes. :-)
 
-See [`PROTOCOL.md`](PROTOCOL.md) for the frozen Phase 0 experimental contract, [`PHASE1.md`](PHASE1.md) for apparatus validation, and [`ROADMAP.md`](ROADMAP.md) for later phases.
+See [`PROTOCOL.md`](PROTOCOL.md) for the frozen Phase 0 experimental contract, [`PHASE1.md`](PHASE1.md) for apparatus validation, [`PHASE1-EVIDENCE.md`](PHASE1-EVIDENCE.md) for evidence retention, and [`ROADMAP.md`](ROADMAP.md) for later phases.
