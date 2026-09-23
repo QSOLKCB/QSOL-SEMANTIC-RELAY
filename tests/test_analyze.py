@@ -1,3 +1,4 @@
+import hashlib
 import json
 import tempfile
 import unittest
@@ -94,6 +95,45 @@ class AnalyzeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, "condition must be a string"):
             analyze_records(records, source_jsonl_sha256="0" * 64)
 
+    def test_rejects_coercively_equal_constant_metadata_types(self) -> None:
+        records = self.make_records(1)
+        records[1] = dict(records[1])
+        records[1]["requested_replicates"] = True
+        with self.assertRaisesRegex(
+            ValidationError,
+            "requested_replicates must have the same type across the run",
+        ):
+            analyze_records(records, source_jsonl_sha256="0" * 64)
+
+        records = self.make_records(1)
+        records[1] = dict(records[1])
+        records[1]["base_seed"] = 123.0
+        with self.assertRaisesRegex(
+            ValidationError,
+            "base_seed must have the same type across the run",
+        ):
+            analyze_records(records, source_jsonl_sha256="0" * 64)
+
+        records = self.make_records(1)
+        records[1] = dict(records[1])
+        records[1]["writer_word_budget"] = 30.0
+        with self.assertRaisesRegex(
+            ValidationError,
+            "writer_word_budget must have the same type across the run",
+        ):
+            analyze_records(records, source_jsonl_sha256="0" * 64)
+
+    def test_rejects_signed_sha256_syntax(self) -> None:
+        records = self.make_records(1)
+        signed_digest = "-" + ("0" * 63)
+        for record in records:
+            record["experiment_input_sha256"] = signed_digest
+        with self.assertRaisesRegex(
+            ValidationError,
+            "experiment_input_sha256 must contain exactly 64 hexadecimal digits",
+        ):
+            analyze_records(records, source_jsonl_sha256="0" * 64)
+
     def test_rejects_seed_drift(self) -> None:
         records = self.make_records()
         records[0] = dict(records[0])
@@ -120,12 +160,38 @@ class AnalyzeTests(unittest.TestCase):
     def test_analyze_file_binds_summary_to_raw_jsonl_hash(self) -> None:
         records = self.make_records(2)
         raw = "".join(json.dumps(record, sort_keys=True) + "\n" for record in records)
+        raw_bytes = raw.encode("utf-8")
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "run.jsonl"
-            path.write_text(raw, encoding="utf-8")
+            path.write_bytes(raw_bytes)
             summary = analyze_file(path)
-        self.assertEqual(summary["source_jsonl_sha256"], sha256_text(raw))
+        self.assertEqual(
+            summary["source_jsonl_sha256"],
+            hashlib.sha256(raw_bytes).hexdigest(),
+        )
         self.assertFalse(summary["fixture_verified"])
+
+    def test_analyze_file_hashes_crlf_bytes_without_normalization(self) -> None:
+        records = self.make_records(2)
+        raw_lf = "".join(
+            json.dumps(record, sort_keys=True) + "\n"
+            for record in records
+        ).encode("utf-8")
+        raw_crlf = raw_lf.replace(b"\n", b"\r\n")
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "run-crlf.jsonl"
+            path.write_bytes(raw_crlf)
+            summary = analyze_file(path)
+
+        self.assertEqual(
+            summary["source_jsonl_sha256"],
+            hashlib.sha256(raw_crlf).hexdigest(),
+        )
+        self.assertNotEqual(
+            summary["source_jsonl_sha256"],
+            hashlib.sha256(raw_lf).hexdigest(),
+        )
 
 
 if __name__ == "__main__":
