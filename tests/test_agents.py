@@ -27,7 +27,7 @@ class AgentTests(unittest.TestCase):
     def test_windows_command_parsing_handles_escaped_quotes_and_spaces(self) -> None:
         self.assertEqual(
             _split_command(
-                r'python -c "print(\\\"hello world\\\")"',
+                r'python -c "print(\"hello world\")"',
                 windows=True,
             ),
             ("python", "-c", 'print("hello world")'),
