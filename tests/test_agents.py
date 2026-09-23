@@ -1,6 +1,7 @@
 import json
 import os
 import shlex
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -22,6 +23,27 @@ class AgentTests(unittest.TestCase):
             _split_command(r'python "scripts\client file.py"', windows=True),
             ("python", r"scripts\client file.py"),
         )
+
+    def test_windows_command_parsing_handles_escaped_quotes_and_spaces(self) -> None:
+        self.assertEqual(
+            _split_command(
+                r'python -c "print(\\\"hello world\\\")"',
+                windows=True,
+            ),
+            ("python", "-c", 'print("hello world")'),
+        )
+
+    def test_windows_command_parsing_round_trips_list2cmdline(self) -> None:
+        cases = (
+            ("python", "-c", 'print("hello world")'),
+            ("python", r"scripts\\client.py", "argument with spaces"),
+            ("tool.exe", r"C:\\Program Files\\relay\\client.exe", r'{"key":"two words"}'),
+            ("tool.exe", "", r"trailing\\"),
+        )
+        for argv in cases:
+            with self.subTest(argv=argv):
+                command = subprocess.list2cmdline(argv)
+                self.assertEqual(_split_command(command, windows=True), argv)
 
     def test_label_preserves_argument_boundaries(self) -> None:
         agent = CommandAgent(
