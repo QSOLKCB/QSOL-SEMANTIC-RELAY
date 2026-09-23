@@ -45,6 +45,8 @@ class Experiment:
         expected_answer_raw = raw.get("expected_answer")
         if not isinstance(expected_answer_raw, str) or not expected_answer_raw.strip():
             raise ValueError("expected_answer must be a non-empty string")
+        if expected_answer_raw.strip().casefold() == "unknown":
+            raise ValueError("expected_answer must not use the reserved UNKNOWN sentinel")
 
         budget_raw = raw.get("writer_word_budget")
         if isinstance(budget_raw, bool) or not isinstance(budget_raw, int):
@@ -134,11 +136,18 @@ def run_replication(
     timestamp = datetime.now(timezone.utc).isoformat()
     condition_order, order_seed = _condition_order(base_seed, replication_index)
 
-    records: list[dict[str, Any]] = []
-    for execution_index, condition in enumerate(condition_order):
+    derived_boards: dict[str, tuple[int, str]] = {}
+    for condition in CONDITIONS:
         condition_offset = CONDITIONS.index(condition)
         condition_seed = base_seed + (replication_index * 1009) + condition_offset
-        reader_board = transform_board(real_board, condition, condition_seed)
+        derived_boards[condition] = (
+            condition_seed,
+            transform_board(real_board, condition, condition_seed),
+        )
+
+    records: list[dict[str, Any]] = []
+    for execution_index, condition in enumerate(condition_order):
+        condition_seed, reader_board = derived_boards[condition]
         observed = reader.invoke(reader_prompt(reader_board, experiment.question))
         record = {
             "experiment_id": experiment.experiment_id,
