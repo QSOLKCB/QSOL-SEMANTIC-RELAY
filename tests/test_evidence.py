@@ -1,8 +1,11 @@
+import hashlib
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
+from semantic_relay import evidence as evidence_module
 from semantic_relay.analyze import analyze_file
 from semantic_relay.evidence import (
     EVIDENCE_SCHEMA,
@@ -185,6 +188,132 @@ class EvidenceTests(unittest.TestCase):
                     analysis_path=analysis_path,
                     experiment_path=experiment_path,
                 )
+
+    def test_verify_rejects_numeric_type_coercion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path, analysis_path, experiment_path = self.make_artifacts(root)
+            manifest = build_evidence_manifest(
+                input_path=input_path,
+                analysis_path=analysis_path,
+                experiment_path=experiment_path,
+                model_id="qwen2.5:3b",
+                runtime_version="ollama 0.99.0",
+                repository_commit="a" * 40,
+            )
+
+            mutations = (
+                ("base_seed", float(manifest["base_seed"])),
+                (
+                    "requested_replicates",
+                    float(manifest["requested_replicates"]),
+                ),
+            )
+            for field, replacement in mutations:
+                with self.subTest(field=field):
+                    mutated = dict(manifest)
+                    mutated[field] = replacement
+                    manifest_path = root / f"{field}.evidence.json"
+                    manifest_path.write_text(
+                        json.dumps(mutated, indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8",
+                    )
+                    with self.assertRaisesRegex(
+                        ValidationError,
+                        "evidence manifest does not match supplied artifacts or metadata",
+                    ):
+                        verify_evidence_manifest(
+                            manifest_path=manifest_path,
+                            input_path=input_path,
+                            analysis_path=analysis_path,
+                            experiment_path=experiment_path,
+                        )
+
+            mutated = json.loads(json.dumps(manifest))
+            mutated["raw_jsonl"]["size_bytes"] = float(
+                mutated["raw_jsonl"]["size_bytes"]
+            )
+            manifest_path = root / "size.evidence.json"
+            manifest_path.write_text(
+                json.dumps(mutated, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                ValidationError,
+                "evidence manifest does not match supplied artifacts or metadata",
+            ):
+                verify_evidence_manifest(
+                    manifest_path=manifest_path,
+                    input_path=input_path,
+                    analysis_path=analysis_path,
+                    experiment_path=experiment_path,
+                )
+
+    def test_manifest_write_failure_publishes_no_partial_file(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = root / "run.evidence.json"
+
+            def fail_dump(manifest: object, handle: object, **kwargs: object) -> None:
+                handle.write('{"partial":')
+                raise OSError("simulated write failure")
+
+            with patch("semantic_relay.evidence.json.dump", side_effect=fail_dump):
+                with self.assertRaisesRegex(OSError, "simulated write failure"):
+                    write_manifest(path, {"schema": EVIDENCE_SCHEMA})
+
+            self.assertFalse(path.exists())
+            self.assertEqual(
+                list(root.glob(f".{path.name}.*.tmp")),
+                [],
+            )
+
+    def test_manifest_analyzes_exact_captured_fixture_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path, analysis_path, experiment_path = self.make_artifacts(root)
+            original_fixture = experiment_path.read_bytes()
+            rewritten_fixture = (
+                json.dumps(
+                    json.loads(original_fixture.decode("utf-8")),
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode("utf-8")
+            self.assertNotEqual(original_fixture, rewritten_fixture)
+
+            original_analyze_captured = evidence_module._analyze_captured_artifacts
+
+            def rewrite_then_analyze(
+                raw_jsonl: bytes,
+                experiment_raw: bytes,
+            ) -> dict[str, object]:
+                experiment_path.write_bytes(rewritten_fixture)
+                return original_analyze_captured(raw_jsonl, experiment_raw)
+
+            with patch(
+                "semantic_relay.evidence._analyze_captured_artifacts",
+                side_effect=rewrite_then_analyze,
+            ):
+                manifest = build_evidence_manifest(
+                    input_path=input_path,
+                    analysis_path=analysis_path,
+                    experiment_path=experiment_path,
+                    model_id="qwen2.5:3b",
+                    runtime_version="ollama 0.99.0",
+                    repository_commit="a" * 40,
+                )
+
+            self.assertEqual(
+                manifest["experiment_fixture"]["sha256"],
+                hashlib.sha256(original_fixture).hexdigest(),
+            )
+            self.assertEqual(
+                manifest["experiment_fixture"]["size_bytes"],
+                len(original_fixture),
+            )
+            self.assertEqual(experiment_path.read_bytes(), rewritten_fixture)
 
     def test_verify_round_trip(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
