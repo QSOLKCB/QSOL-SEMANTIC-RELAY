@@ -363,11 +363,16 @@ def _validate_records(
                 "reader_board",
                 nonempty=False,
             )
-            expected_reader_board = transform_board(
-                writer_board,
-                condition,
-                expected_seed,
-            )
+            try:
+                expected_reader_board = transform_board(
+                    writer_board,
+                    condition,
+                    expected_seed,
+                )
+            except ValueError as exc:
+                raise ValidationError(
+                    f"replication {replication_index} {condition} transform invalid: {exc}"
+                ) from exc
             _require(
                 reader_board == expected_reader_board,
                 f"replication {replication_index} {condition} reader_board mismatch",
