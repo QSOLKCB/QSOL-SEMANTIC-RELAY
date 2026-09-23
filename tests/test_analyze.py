@@ -1,0 +1,125 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from semantic_relay.analyze import ValidationError, analyze_file, analyze_records
+from semantic_relay.board import sha256_text
+from semantic_relay.runner import Experiment, run_replication
+
+
+class FakeWriter:
+    label = "fake-writer"
+
+    def invoke(self, prompt: str) -> str:
+        return "K17 has NEMU. NEMU passes Gate 3."
+
+
+class FakeReader:
+    label = "fake-reader"
+
+    def invoke(self, prompt: str) -> str:
+        marker = "BOARD:\n"
+        question_marker = "\n\nQUESTION:"
+        board = prompt.split(marker, 1)[1].split(question_marker, 1)[0]
+        if board == "K17 has NEMU. NEMU passes Gate 3.":
+            return "K17"
+        return "UNKNOWN"
+
+
+class AnalyzeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.experiment = Experiment(
+            experiment_id="test",
+            facts=(
+                "Object K17 is associated with property NEMU.",
+                "Objects with property NEMU are permitted through Gate 3.",
+            ),
+            question="Which object can pass Gate 3?",
+            expected_answer="K17",
+            writer_word_budget=30,
+        )
+        self.run_id = "00000000-0000-4000-8000-000000000001"
+
+    def make_records(self, replicates: int = 3) -> list[dict[str, object]]:
+        records: list[dict[str, object]] = []
+        for replication_index in range(replicates):
+            records.extend(
+                run_replication(
+                    self.experiment,
+                    FakeWriter(),
+                    FakeReader(),
+                    replication_index,
+                    123,
+                    run_id=self.run_id,
+                    requested_replicates=replicates,
+                )
+            )
+        return records
+
+    def test_valid_run_reports_paired_descriptive_contrasts(self) -> None:
+        records = self.make_records()
+        summary = analyze_records(
+            records,
+            source_jsonl_sha256="0" * 64,
+            experiment=self.experiment,
+        )
+        self.assertEqual(summary["validation"], "valid")
+        self.assertEqual(summary["observed_replicates"], 3)
+        self.assertEqual(summary["accuracy"]["REAL"], 1.0)
+        self.assertEqual(summary["accuracy"]["NULL"], 0.0)
+        self.assertEqual(summary["accuracy"]["SHUFFLED"], 0.0)
+        self.assertEqual(summary["accuracy"]["RANDOM"], 0.0)
+        self.assertEqual(summary["contrasts"]["REAL-NULL"]["delta_accuracy"], 1.0)
+        self.assertEqual(summary["contrasts"]["REAL-NULL"]["real_only_correct"], 3)
+
+    def test_rejects_incomplete_run(self) -> None:
+        records = self.make_records()
+        del records[-4:]
+        with self.assertRaisesRegex(ValidationError, "expected 12 records"):
+            analyze_records(records, source_jsonl_sha256="0" * 64)
+
+    def test_rejects_tampered_reader_board(self) -> None:
+        records = self.make_records()
+        records[0] = dict(records[0])
+        records[0]["reader_board"] = "tampered"
+        records[0]["reader_board_sha256"] = sha256_text("tampered")
+        with self.assertRaisesRegex(ValidationError, "reader_board mismatch"):
+            analyze_records(records, source_jsonl_sha256="0" * 64)
+
+    def test_rejects_seed_drift(self) -> None:
+        records = self.make_records()
+        records[0] = dict(records[0])
+        records[0]["seed"] += 1
+        with self.assertRaisesRegex(ValidationError, "seed mismatch"):
+            analyze_records(records, source_jsonl_sha256="0" * 64)
+
+    def test_rejects_fixture_mismatch(self) -> None:
+        records = self.make_records()
+        changed = Experiment(
+            experiment_id=self.experiment.experiment_id,
+            facts=self.experiment.facts,
+            question="Different question?",
+            expected_answer=self.experiment.expected_answer,
+            writer_word_budget=self.experiment.writer_word_budget,
+        )
+        with self.assertRaisesRegex(ValidationError, "does not match fixture"):
+            analyze_records(
+                records,
+                source_jsonl_sha256="0" * 64,
+                experiment=changed,
+            )
+
+    def test_analyze_file_binds_summary_to_raw_jsonl_hash(self) -> None:
+        records = self.make_records(2)
+        raw = "".join(json.dumps(record, sort_keys=True) + "\n" for record in records)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "run.jsonl"
+            path.write_text(raw, encoding="utf-8")
+            summary = analyze_file(path)
+        self.assertEqual(summary["source_jsonl_sha256"], sha256_text(raw))
+        self.assertFalse(summary["fixture_verified"])
+
+
+if __name__ == "__main__":
+    unittest.main()
