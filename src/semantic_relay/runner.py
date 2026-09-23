@@ -132,6 +132,11 @@ def run_replication(
     run_id: str | None = None,
     requested_replicates: int | None = None,
 ) -> list[dict[str, Any]]:
+    if isinstance(replication_index, bool) or not isinstance(replication_index, int):
+        raise ValueError("replication_index must be an integer")
+    if isinstance(base_seed, bool) or not isinstance(base_seed, int):
+        raise ValueError("base_seed must be an integer")
+
     if (run_id is None) != (requested_replicates is None):
         raise ValueError("run_id and requested_replicates must be provided together")
     if run_id is not None:
