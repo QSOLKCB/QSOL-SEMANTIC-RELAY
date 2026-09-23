@@ -123,6 +123,21 @@ class RunnerTests(unittest.TestCase):
             self.assertEqual(len(path.read_text(encoding="utf-8").splitlines()), 4)
             self.assertFalse(reservation.exists())
 
+    def test_publish_jsonl_refuses_late_created_output(self) -> None:
+        records = run_replication(self.experiment, FakeWriter(), FakeReader(), 2, 123)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "result.jsonl"
+            path.write_text("late producer\n", encoding="utf-8")
+
+            with self.assertRaises(FileExistsError):
+                publish_jsonl(path, records)
+
+            self.assertEqual(path.read_text(encoding="utf-8"), "late producer\n")
+            self.assertEqual(
+                list(path.parent.glob(f".{path.name}.*.tmp")),
+                [],
+            )
+
     def test_prepare_output_rejects_existing_reservation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "result.jsonl"
