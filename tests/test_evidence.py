@@ -142,6 +142,32 @@ class EvidenceTests(unittest.TestCase):
                     repository_commit="a" * 40,
                 )
 
+    def test_rejects_type_coerced_analysis_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_path, analysis_path, experiment_path = self.make_artifacts(root)
+            analysis = json.loads(analysis_path.read_text(encoding="utf-8"))
+            analysis["observed_replicates"] = float(
+                analysis["observed_replicates"]
+            )
+            analysis_path.write_text(
+                json.dumps(analysis, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(
+                ValidationError,
+                "analysis JSON does not match fresh fixture-backed analysis",
+            ):
+                build_evidence_manifest(
+                    input_path=input_path,
+                    analysis_path=analysis_path,
+                    experiment_path=experiment_path,
+                    model_id="qwen2.5:3b",
+                    runtime_version="ollama 0.99.0",
+                    repository_commit="a" * 40,
+                )
+
     def test_rejects_non_fixture_verified_analysis(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
