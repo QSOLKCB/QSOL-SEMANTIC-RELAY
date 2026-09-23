@@ -88,6 +88,24 @@ def _file_descriptor(raw: bytes) -> dict[str, Any]:
     }
 
 
+def _fsync_directory(path: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    try:
+        directory_fd = os.open(path, flags)
+    except OSError as exc:
+        raise ValidationError(
+            f"cannot open directory for durability sync: {path}"
+        ) from exc
+    try:
+        os.fsync(directory_fd)
+    except OSError as exc:
+        raise ValidationError(
+            f"cannot durability-sync directory: {path}"
+        ) from exc
+    finally:
+        os.close(directory_fd)
+
+
 def _strict_equal(left: Any, right: Any) -> bool:
     if type(left) is not type(right):
         return False
@@ -214,8 +232,10 @@ def write_manifest(path: Path, manifest: dict[str, Any]) -> None:
         except FileExistsError as exc:
             raise ValidationError(f"evidence manifest already exists: {path}") from exc
 
+        _fsync_directory(path.parent)
         temp_path.unlink()
         temp_path = None
+        _fsync_directory(path.parent)
     except BaseException:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
